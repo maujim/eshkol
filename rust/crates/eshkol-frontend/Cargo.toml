@@ -1,0 +1,13 @@
+[package]
+name = "eshkol-frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+eshkol-core = { path = "../eshkol-core" }
+eshkol-runtime = { path = "../eshkol-runtime" }
+
+[lib]
+path = "src/lib.rs"

@@ -174,6 +174,152 @@ jobs:
             ${{ matrix.build_dir }}/eshkol-repl
             ${{ matrix.build_dir }}/stdlib.o
 
+  rust-port-parity:
+    name: rust-port-parity
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add LLVM Repository
+        shell: bash
+        run: |
+          set -euxo pipefail
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${LLVM_MAJOR} main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get install -y \
+            cmake ninja-build g++ \
+            llvm-${LLVM_MAJOR} llvm-${LLVM_MAJOR}-dev \
+            libreadline-dev pkg-config \
+            libssl-dev libncurses-dev \
+            git python3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure C++ Oracle Build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build-rust-parity -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DESHKOL_BUILD_TESTS=OFF \
+            -DESHKOL_BUILD_INTEGRATION_TESTS=OFF \
+            -DESHKOL_REQUIRED_LLVM_MAJOR="${LLVM_MAJOR}" \
+            -DLLVM_CONFIG_EXECUTABLE="/usr/bin/llvm-config-${LLVM_MAJOR}" \
+            -DESHKOL_XLA_ENABLED=OFF \
+            -DESHKOL_GPU_ENABLED=OFF
+
+      - name: Build C++ Oracle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build-rust-parity --target eshkol-run --parallel
+
+      - name: Build Rust Candidate
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd rust
+          cargo build -p eshkol-cli
+
+      - name: Run Rust Interop Smoke
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ./scripts/run_rust_interop_smoke.sh
+
+      - name: Run Expression Parity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 scripts/rust_port_parity.py \
+            --cpp-bin ./build-rust-parity/eshkol-run \
+            --no-color
+
+      - name: Run File Fixture Parity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 scripts/rust_port_file_parity.py \
+            --cpp-bin ./build-rust-parity/eshkol-run \
+            --no-color
+
+  rust-port-pilot:
+    name: rust-port-pilot
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add LLVM Repository
+        shell: bash
+        run: |
+          set -euxo pipefail
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${LLVM_MAJOR} main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get install -y \
+            cmake ninja-build g++ \
+            llvm-${LLVM_MAJOR} llvm-${LLVM_MAJOR}-dev \
+            libreadline-dev pkg-config \
+            libssl-dev libncurses-dev \
+            git python3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure Pilot C++ Build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build-rust-pilot -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DESHKOL_BUILD_TESTS=OFF \
+            -DESHKOL_BUILD_INTEGRATION_TESTS=OFF \
+            -DESHKOL_REQUIRED_LLVM_MAJOR="${LLVM_MAJOR}" \
+            -DLLVM_CONFIG_EXECUTABLE="/usr/bin/llvm-config-${LLVM_MAJOR}" \
+            -DESHKOL_XLA_ENABLED=OFF \
+            -DESHKOL_GPU_ENABLED=OFF \
+            -DESHKOL_RUST_INTEROP_PILOT=ON
+
+      - name: Build Pilot C++ Binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build-rust-pilot --target eshkol-run --parallel
+
+      - name: Build Rust Runtime Interop Library
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd rust
+          cargo build -p eshkol-runtime
+
+      - name: Run Pilot Opt-in Execution
+        shell: bash
+        run: |
+          set -euxo pipefail
+          LIB_PATH="$GITHUB_WORKSPACE/rust/target/debug/libeshkol_runtime.so"
+          test -f "$LIB_PATH"
+
+          ESHKOL_RUST_INTEROP_ENABLED=1 \
+          ESHKOL_RUST_INTEROP_LIB="$LIB_PATH" \
+          ESHKOL_RUST_INTEROP_LOG=1 \
+          ./build-rust-pilot/eshkol-run -e "(display (/ 4 6))(newline)" 2>&1 | tee build-rust-pilot/pilot.log
+
+          grep -q "2/3" build-rust-pilot/pilot.log
+          grep -q "normalized via Rust" build-rust-pilot/pilot.log
+
   windows-matrix:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}

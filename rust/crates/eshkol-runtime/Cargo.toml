@@ -1,0 +1,13 @@
+[package]
+name = "eshkol-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+eshkol-core = { path = "../eshkol-core" }
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]

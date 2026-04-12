@@ -1,0 +1,8 @@
+# Existing test fixtures used for Rust-vs-C++ file parity (line-expression mode)
+
+tests/repl/01_arithmetic.esk
+tests/repl/02_comparisons.esk
+tests/repl/05_variables.esk
+tests/repl/06_functions.esk
+tests/repl/07_lambdas.esk
+tests/repl/08_let.esk

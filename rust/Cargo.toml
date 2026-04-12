@@ -1,0 +1,18 @@
+[workspace]
+members = [
+  "crates/eshkol-core",
+  "crates/eshkol-runtime",
+  "crates/eshkol-frontend",
+  "crates/eshkol-backend",
+  "crates/eshkol-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Eshkol Contributors"]
+
+[workspace.metadata]
+description = "Incremental Rust port of the Eshkol compiler/runtime"

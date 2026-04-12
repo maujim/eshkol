@@ -14,11 +14,77 @@
 #include <string.h>
 #include <limits.h>
 
+#if defined(ESHKOL_RUST_INTEROP_PILOT) && !defined(_WIN32)
+#include <dlfcn.h>
+#endif
+
 /* Forward declaration for arena allocation */
 extern "C" void* arena_allocate_with_header(void* arena, uint64_t data_size,
                                              uint8_t subtype, uint8_t flags);
 extern "C" void* arena_allocate(void* arena, uint64_t size);
 extern "C" void* arena_allocate_string_with_header(void* arena, uint64_t size);
+
+#if defined(ESHKOL_RUST_INTEROP_PILOT) && !defined(_WIN32)
+typedef void (*eshkol_rust_rational_normalize_fn_t)(
+    int64_t num, int64_t denom, int64_t* out_num, int64_t* out_denom);
+
+static eshkol_rust_rational_normalize_fn_t resolve_rust_rational_normalizer() {
+    static eshkol_rust_rational_normalize_fn_t fn = nullptr;
+    static int attempted = 0;
+    static void* handle = nullptr;
+
+    if (attempted) return fn;
+    attempted = 1;
+
+    const char* enabled = getenv("ESHKOL_RUST_INTEROP_ENABLED");
+    if (!enabled || strcmp(enabled, "1") != 0) return nullptr;
+
+    const char* explicit_path = getenv("ESHKOL_RUST_INTEROP_LIB");
+    if (explicit_path && explicit_path[0] != '\0') {
+        handle = dlopen(explicit_path, RTLD_LAZY | RTLD_LOCAL);
+    }
+
+    if (!handle) {
+#ifdef __APPLE__
+        handle = dlopen("libeshkol_runtime.dylib", RTLD_LAZY | RTLD_LOCAL);
+#else
+        handle = dlopen("libeshkol_runtime.so", RTLD_LAZY | RTLD_LOCAL);
+#endif
+    }
+
+    if (!handle) return nullptr;
+
+    fn = reinterpret_cast<eshkol_rust_rational_normalize_fn_t>(
+        dlsym(handle, "eshkol_rust_rational_normalize_into"));
+    return fn;
+}
+
+static int maybe_normalize_rational_via_rust(int64_t* num, int64_t* denom) {
+    if (!num || !denom) return 0;
+
+    eshkol_rust_rational_normalize_fn_t fn = resolve_rust_rational_normalizer();
+    if (!fn) return 0;
+
+    int64_t out_num = *num;
+    int64_t out_denom = *denom;
+    fn(*num, *denom, &out_num, &out_denom);
+
+    if (out_denom == 0) return 0;
+
+    *num = out_num;
+    *denom = out_denom;
+
+    if (getenv("ESHKOL_RUST_INTEROP_LOG")) {
+        static int logged = 0;
+        if (!logged) {
+            logged = 1;
+            fprintf(stderr, "[eshkol] rust interop pilot: eshkol_rational_create normalized via Rust\n");
+        }
+    }
+
+    return 1;
+}
+#endif
 
 static int64_t gcd(int64_t a, int64_t b) {
     if (a < 0) a = -a;
@@ -71,6 +137,10 @@ static void* rational_create_safe(void* arena, __int128_t num, __int128_t denom)
 }
 
 extern "C" void* eshkol_rational_create(void* arena, int64_t num, int64_t denom) {
+#if defined(ESHKOL_RUST_INTEROP_PILOT) && !defined(_WIN32)
+    (void)maybe_normalize_rational_via_rust(&num, &denom);
+#endif
+
     if (denom == 0) {
         /* Division by zero — return 0/1 as fallback */
         denom = 1;
@@ -141,9 +211,20 @@ extern "C" void* eshkol_rational_div(void* arena, void* a, void* b) {
 extern "C" int eshkol_rational_compare(void* a, void* b) {
     eshkol_rational_t* ra = (eshkol_rational_t*)a;
     eshkol_rational_t* rb = (eshkol_rational_t*)b;
+
+    int64_t a_num = ra->numerator;
+    int64_t a_den = ra->denominator;
+    int64_t b_num = rb->numerator;
+    int64_t b_den = rb->denominator;
+
+#if defined(ESHKOL_RUST_INTEROP_PILOT) && !defined(_WIN32)
+    (void)maybe_normalize_rational_via_rust(&a_num, &a_den);
+    (void)maybe_normalize_rational_via_rust(&b_num, &b_den);
+#endif
+
     /* Compare a/b vs c/d → a*d vs c*b — uses __int128_t to prevent overflow */
-    __int128_t lhs = (__int128_t)ra->numerator * rb->denominator;
-    __int128_t rhs = (__int128_t)rb->numerator * ra->denominator;
+    __int128_t lhs = (__int128_t)a_num * b_den;
+    __int128_t rhs = (__int128_t)b_num * a_den;
     if (lhs < rhs) return -1;
     if (lhs > rhs) return 1;
     return 0;

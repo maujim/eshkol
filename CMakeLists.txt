@@ -89,6 +89,7 @@ option(ESHKOL_BUILD_EXAMPLES "Build examples" OFF)
 option(ESHKOL_BUILD_INTEGRATION_TESTS "Build integration tests" OFF)
 option(ESHKOL_ENABLE_ASAN "Enable Address Sanitizer" OFF)
 option(ESHKOL_ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
+option(ESHKOL_RUST_INTEROP_PILOT "Enable pilot C++ call-site wiring to Rust interop symbols" OFF)
 
 if(ESHKOL_BUILD_TESTS)
     enable_testing()
@@ -917,6 +918,10 @@ if(NOT ESHKOL_USING_MSVC)
 endif()
 target_compile_definitions(eshkol-static PRIVATE ESHKOL_LLVM_BACKEND_ENABLED)
 target_compile_definitions(eshkol-static PRIVATE ESHKOL_VM_LIBRARY_MODE)
+if(ESHKOL_RUST_INTEROP_PILOT)
+    target_compile_definitions(eshkol-static PRIVATE ESHKOL_RUST_INTEROP_PILOT=1)
+    message(STATUS "Rust interop pilot call-site wiring: ENABLED")
+endif()
 
 # Add LLVM include directories for enhanced cross-platform support
 if(LLVM_INCLUDE_DIRS)
